@@ -11,10 +11,10 @@ export default function Home() {
 
         <div className="flex flex-col gap-3">
           <Link
-            href="/admin"
+            href="/login-gerente"
             className="bg-blue-600 text-white py-3 rounded-xl font-semibold hover:bg-blue-700"
           >
-            Área Gerencial
+            Login Gerencial
           </Link>
 
           <Link

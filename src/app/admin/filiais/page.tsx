@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { GerenteLogado, pegarGerente } from "@/lib/auth";
 
 type Filial = {
   id: string;
@@ -31,6 +33,9 @@ const precosIniciais = {
 };
 
 export default function FiliaisPage() {
+  const router = useRouter();
+
+  const [gerente, setGerente] = useState<GerenteLogado | null>(null);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [precos, setPrecos] = useState<PrecoBotijao[]>([]);
 
@@ -40,10 +45,27 @@ export default function FiliaisPage() {
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
-  async function buscarDados() {
+  useEffect(() => {
+    const gerenteLogado = pegarGerente();
+
+    if (!gerenteLogado) {
+      router.push("/login-gerente");
+      return;
+    }
+
+    setGerente(gerenteLogado);
+    buscarDados(gerenteLogado);
+  }, [router]);
+
+  async function buscarDados(gerenteLogado?: GerenteLogado) {
+    const gerenteAtual = gerenteLogado || gerente;
+
+    if (!gerenteAtual) return;
+
     const { data: filiaisData, error: filiaisError } = await supabase
       .from("filiais")
       .select("*")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .order("nome", { ascending: true });
 
     if (filiaisError) {
@@ -54,6 +76,7 @@ export default function FiliaisPage() {
     const { data: precosData, error: precosError } = await supabase
       .from("precos_botijoes")
       .select("*")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .order("modelo", { ascending: true });
 
     if (precosError) {
@@ -102,6 +125,13 @@ export default function FiliaisPage() {
 
   async function salvarFilial(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!gerente) {
+      alert("Faça login novamente.");
+      router.push("/login-gerente");
+      return;
+    }
+
     setSalvando(true);
 
     let filialId = editandoId;
@@ -113,7 +143,8 @@ export default function FiliaisPage() {
           nome,
           cidade,
         })
-        .eq("id", editandoId);
+        .eq("id", editandoId)
+        .eq("empresa_id", gerente.empresa_id);
 
       if (error) {
         setSalvando(false);
@@ -124,6 +155,8 @@ export default function FiliaisPage() {
       const { data, error } = await supabase
         .from("filiais")
         .insert({
+          empresa_id: gerente.empresa_id,
+          gerente_id: gerente.id,
           nome,
           cidade,
           ativo: true,
@@ -141,6 +174,8 @@ export default function FiliaisPage() {
     }
 
     const precosParaSalvar = modelosGas.map((modelo) => ({
+      empresa_id: gerente.empresa_id,
+      gerente_id: gerente.id,
       filial_id: filialId,
       modelo,
       preco: Number(valores[modelo] || 0),
@@ -166,9 +201,13 @@ export default function FiliaisPage() {
     buscarDados();
   }
 
-  useEffect(() => {
-    buscarDados();
-  }, []);
+  if (!gerente) {
+    return (
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p>Carregando...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
@@ -177,7 +216,7 @@ export default function FiliaisPage() {
           <div>
             <h1 className="text-2xl font-bold">Filiais</h1>
             <p className="text-gray-600">
-              Cadastre a filial e defina os valores dos botijões.
+              Empresa: <strong>{gerente.empresa_nome}</strong>
             </p>
           </div>
 
@@ -304,7 +343,7 @@ export default function FiliaisPage() {
                   {filiais.length === 0 && (
                     <tr>
                       <td className="p-3 border text-gray-500" colSpan={6}>
-                        Nenhuma filial cadastrada.
+                        Nenhuma filial cadastrada para esta empresa.
                       </td>
                     </tr>
                   )}
@@ -313,8 +352,8 @@ export default function FiliaisPage() {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              A tabela mostra P13 e P45 como resumo. Ao clicar em editar, todos
-              os preços aparecem no formulário.
+              Ao cadastrar uma filial, ela fica vinculada automaticamente à
+              empresa do gerente logado.
             </p>
           </div>
         </div>

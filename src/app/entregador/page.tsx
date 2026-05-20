@@ -10,12 +10,19 @@ type EntregadorLogado = {
   nome: string;
   usuario: string;
   filial_id: string | null;
+  empresa_id: string | null;
+  gerente_id: string | null;
 };
 
 type PrecoBotijao = {
   id: string;
   modelo: string;
   preco: number;
+};
+
+type Filial = {
+  id: string;
+  nome: string;
 };
 
 type Cliente = {
@@ -36,6 +43,7 @@ export default function EntregadorPage() {
   const router = useRouter();
 
   const [entregador, setEntregador] = useState<EntregadorLogado | null>(null);
+  const [filial, setFilial] = useState<Filial | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [clienteSelecionado, setClienteSelecionado] =
@@ -68,6 +76,7 @@ export default function EntregadorPage() {
 
     buscarPrecos(entregadorLogado.filial_id);
     buscarClientes(entregadorLogado.filial_id);
+    buscarFilial(entregadorLogado.filial_id);
   }, [router]);
 
   async function buscarPrecos(filialId: string | null) {
@@ -93,25 +102,49 @@ export default function EntregadorPage() {
     }
   }
 
-  async function buscarClientes(filialId: string | null) {
-    let query = supabase
-      .from("clientes")
-      .select("*")
-      .order("nome", { ascending: true });
+  async function buscarFilial(filialId: string | null) {
+  if (!filialId) return;
 
-    if (filialId) {
-      query = query.eq("filial_id", filialId);
-    }
+  const { data, error } = await supabase
+    .from("filiais")
+    .select("id, nome")
+    .eq("id", filialId)
+    .single();
 
-    const { data, error } = await query;
-
-    if (error) {
-      alert("Erro ao buscar clientes: " + error.message);
-      return;
-    }
-
-    setClientes(data || []);
+  if (error) {
+    console.error("Erro ao buscar filial:", error.message);
+    return;
   }
+
+  setFilial(data);
+}
+
+  async function buscarClientes(filialId: string | null) {
+  const dados = localStorage.getItem("entregador");
+
+  if (!dados) return;
+
+  const entregadorLogado = JSON.parse(dados);
+
+  let query = supabase
+    .from("clientes")
+    .select("*")
+    .eq("empresa_id", entregadorLogado.empresa_id)
+    .order("nome", { ascending: true });
+
+  if (filialId) {
+    query = query.eq("filial_id", filialId);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    alert("Erro ao buscar clientes: " + error.message);
+    return;
+  }
+
+  setClientes(data || []);
+}
 
   const clientesFiltrados = useMemo(() => {
     const termo = buscaCliente.trim().toLowerCase();
@@ -190,13 +223,15 @@ export default function EntregadorPage() {
     const { data, error } = await supabase
       .from("clientes")
       .insert({
-        filial_id: entregador.filial_id,
-        nome: clienteNome,
-        endereco: clienteEndereco,
-        numero: clienteNumero,
-        bairro: clienteBairro,
-        referencia: clienteReferencia,
-      })
+  empresa_id: entregador.empresa_id,
+  gerente_id: entregador.gerente_id,
+  filial_id: entregador.filial_id,
+  nome: clienteNome,
+  endereco: clienteEndereco,
+  numero: clienteNumero,
+  bairro: clienteBairro,
+  referencia: clienteReferencia,
+})
       .select("*")
       .single();
 
@@ -252,18 +287,20 @@ export default function EntregadorPage() {
           .filter(Boolean)
           .join(" - ");
 
-    const { error } = await supabase.from("entregas").insert({
-      cliente_nome: clienteNome,
-      cliente_endereco: enderecoEntrega,
-      produto_modelo: produtoModelo,
-      forma_pagamento: formaPagamento,
-      valor: Number(valor),
-      observacao,
-      entregador_id: entregador.id,
-      entregador_nome: entregador.nome,
-      entregador_id_text: entregador.id,
-      filial_id: entregador.filial_id,
-    });
+        const { error } = await supabase.from("entregas").insert({
+  empresa_id: entregador.empresa_id,
+  gerente_id: entregador.gerente_id,
+  filial_id: entregador.filial_id,
+  cliente_nome: clienteNome,
+  cliente_endereco: enderecoEntrega,
+  produto_modelo: produtoModelo,
+  forma_pagamento: formaPagamento,
+  valor: Number(valor),
+  observacao,
+  entregador_id: entregador.id,
+  entregador_nome: entregador.nome,
+  entregador_id_text: entregador.id,
+});
 
     setSalvando(false);
 
@@ -307,8 +344,12 @@ export default function EntregadorPage() {
           <div>
             <h1 className="text-2xl font-bold">Lançar Entrega</h1>
             <p className="text-gray-600">
-              Entregador: <strong>{entregador.nome}</strong>
-            </p>
+  Entregador: <strong>{entregador.nome}</strong>
+</p>
+
+<p className="text-gray-600">
+  Filial: <strong>{filial?.nome || "Carregando..."}</strong>
+</p>
           </div>
 
           <button onClick={sair} className="text-red-600 font-semibold">

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { GerenteLogado, pegarGerente } from "@/lib/auth";
 
 type Filial = {
   id: string;
@@ -18,9 +20,14 @@ type Entregador = {
   senha: string;
   ativo: boolean;
   filial_id: string | null;
+  empresa_id: string | null;
+  gerente_id: string | null;
 };
 
 export default function EntregadoresPage() {
+  const router = useRouter();
+
+  const [gerente, setGerente] = useState<GerenteLogado | null>(null);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [entregadores, setEntregadores] = useState<Entregador[]>([]);
 
@@ -32,40 +39,75 @@ export default function EntregadoresPage() {
   const [senha, setSenha] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  async function buscarFiliais() {
-    const { data } = await supabase
-      .from("filiais")
-      .select("id, nome")
-      .eq("ativo", true)
-      .order("nome");
+  useEffect(() => {
+    const gerenteLogado = pegarGerente();
 
-    setFiliais(data || []);
-
-    if (data && data.length > 0 && !filialId) {
-      setFilialId(data[0].id);
-    }
-  }
-
-  async function buscarEntregadores() {
-    const { data, error } = await supabase
-      .from("entregadores")
-      .select("*")
-      .order("criado_em", { ascending: false });
-
-    if (error) {
-      alert("Erro ao buscar entregadores: " + error.message);
+    if (!gerenteLogado) {
+      router.push("/login-gerente");
       return;
     }
 
-    setEntregadores(data || []);
+    setGerente(gerenteLogado);
+    buscarDados(gerenteLogado);
+  }, [router]);
+
+  async function buscarDados(gerenteLogado?: GerenteLogado) {
+    const gerenteAtual = gerenteLogado || gerente;
+
+    if (!gerenteAtual) return;
+
+    const { data: filiaisData, error: filiaisError } = await supabase
+      .from("filiais")
+      .select("id, nome")
+      .eq("empresa_id", gerenteAtual.empresa_id)
+      .eq("ativo", true)
+      .order("nome", { ascending: true });
+
+    if (filiaisError) {
+      alert("Erro ao buscar filiais: " + filiaisError.message);
+      return;
+    }
+
+    setFiliais(filiaisData || []);
+
+    if (filiaisData && filiaisData.length > 0 && !filialId) {
+      setFilialId(filiaisData[0].id);
+    }
+
+    const { data: entregadoresData, error: entregadoresError } = await supabase
+      .from("entregadores")
+      .select("*")
+      .eq("empresa_id", gerenteAtual.empresa_id)
+      .order("criado_em", { ascending: false });
+
+    if (entregadoresError) {
+      alert("Erro ao buscar entregadores: " + entregadoresError.message);
+      return;
+    }
+
+    setEntregadores(entregadoresData || []);
   }
 
   function nomeFilial(id: string | null) {
     return filiais.find((filial) => filial.id === id)?.nome || "-";
   }
 
+  function limparFormulario() {
+    setNome("");
+    setCelular("");
+    setPlacaMoto("");
+    setUsuario("");
+    setSenha("");
+  }
+
   async function salvarEntregador(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!gerente) {
+      alert("Faça login novamente.");
+      router.push("/login-gerente");
+      return;
+    }
 
     if (!filialId) {
       alert("Cadastre uma filial antes de cadastrar o entregador.");
@@ -75,6 +117,8 @@ export default function EntregadoresPage() {
     setSalvando(true);
 
     const { error } = await supabase.from("entregadores").insert({
+      empresa_id: gerente.empresa_id,
+      gerente_id: gerente.id,
       filial_id: filialId,
       nome,
       celular,
@@ -92,20 +136,36 @@ export default function EntregadoresPage() {
       return;
     }
 
-    setNome("");
-    setCelular("");
-    setPlacaMoto("");
-    setUsuario("");
-    setSenha("");
-
-    buscarEntregadores();
     alert("Entregador cadastrado com sucesso!");
+
+    limparFormulario();
+    buscarDados();
   }
 
-  useEffect(() => {
-    buscarFiliais();
-    buscarEntregadores();
-  }, []);
+  async function alternarStatus(entregador: Entregador) {
+    if (!gerente) return;
+
+    const { error } = await supabase
+      .from("entregadores")
+      .update({ ativo: !entregador.ativo })
+      .eq("id", entregador.id)
+      .eq("empresa_id", gerente.empresa_id);
+
+    if (error) {
+      alert("Erro ao atualizar entregador: " + error.message);
+      return;
+    }
+
+    buscarDados();
+  }
+
+  if (!gerente) {
+    return (
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p>Carregando...</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-gray-100 p-6">
@@ -114,7 +174,7 @@ export default function EntregadoresPage() {
           <div>
             <h1 className="text-2xl font-bold">Entregadores</h1>
             <p className="text-gray-600">
-              Cadastre filial, dados da moto, usuário e senha.
+              Empresa: <strong>{gerente.empresa_nome}</strong>
             </p>
           </div>
 
@@ -148,7 +208,9 @@ export default function EntregadoresPage() {
             </div>
 
             <div>
-              <label className="block font-semibold mb-1">Nome do entregador</label>
+              <label className="block font-semibold mb-1">
+                Nome do entregador
+              </label>
               <input
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
@@ -220,6 +282,7 @@ export default function EntregadoresPage() {
                     <th className="p-3 border">Placa</th>
                     <th className="p-3 border">Usuário</th>
                     <th className="p-3 border">Status</th>
+                    <th className="p-3 border">Ação</th>
                   </tr>
                 </thead>
 
@@ -234,15 +297,27 @@ export default function EntregadoresPage() {
                       <td className="p-3 border">{entregador.placa_moto}</td>
                       <td className="p-3 border">{entregador.usuario}</td>
                       <td className="p-3 border">
-                        {entregador.ativo ? "Ativo" : "Inativo"}
+                        {entregador.ativo ? "Ativo" : "Bloqueado"}
+                      </td>
+                      <td className="p-3 border">
+                        <button
+                          onClick={() => alternarStatus(entregador)}
+                          className={
+                            entregador.ativo
+                              ? "text-red-600 font-semibold"
+                              : "text-green-600 font-semibold"
+                          }
+                        >
+                          {entregador.ativo ? "Bloquear" : "Liberar"}
+                        </button>
                       </td>
                     </tr>
                   ))}
 
                   {entregadores.length === 0 && (
                     <tr>
-                      <td className="p-3 border text-gray-500" colSpan={6}>
-                        Nenhum entregador cadastrado.
+                      <td className="p-3 border text-gray-500" colSpan={7}>
+                        Nenhum entregador cadastrado para esta empresa.
                       </td>
                     </tr>
                   )}
@@ -251,8 +326,8 @@ export default function EntregadoresPage() {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              Observação: nesta versão de teste, a senha está sendo salva na tabela.
-              Depois vamos trocar para autenticação segura.
+              O entregador fica vinculado automaticamente à empresa e ao gerente
+              logado.
             </p>
           </div>
         </div>

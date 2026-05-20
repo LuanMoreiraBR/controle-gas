@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabase";
 import Link from "next/link";
-import { salvarEntregador } from "@/lib/auth";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { salvarGerente } from "@/lib/auth";
 
-export default function LoginEntregadorPage() {
+export default function LoginGerentePage() {
   const router = useRouter();
 
   const [usuario, setUsuario] = useState("");
@@ -15,24 +15,18 @@ export default function LoginEntregadorPage() {
 
   async function entrar(e: React.FormEvent) {
     e.preventDefault();
+
     setCarregando(true);
 
     const { data, error } = await supabase
-      .from("entregadores")
+      .from("gerentes")
       .select(`
         id,
         nome,
         usuario,
-        filial_id,
         empresa_id,
-        gerente_id,
         ativo,
         empresas (
-          id,
-          nome,
-          ativo
-        ),
-        gerentes (
           id,
           nome,
           ativo
@@ -53,43 +47,33 @@ export default function LoginEntregadorPage() {
       ? data.empresas[0]
       : data.empresas;
 
-    const gerente = Array.isArray(data.gerentes)
-      ? data.gerentes[0]
-      : data.gerentes;
-
     if (!data.ativo) {
-      alert("Este entregador está bloqueado.");
+      alert("Este gerente está bloqueado. Entre em contato com o suporte.");
       return;
     }
 
     if (!empresa || !empresa.ativo) {
-      alert("A empresa está bloqueada. Entre em contato com o gerente.");
+      alert("Esta empresa está bloqueada. Entre em contato com o suporte.");
       return;
     }
 
-    if (!gerente || !gerente.ativo) {
-      alert("O gerente responsável está bloqueado.");
-      return;
-    }
-
-    salvarEntregador({
+    salvarGerente({
       id: data.id,
       nome: data.nome,
       usuario: data.usuario,
-      filial_id: data.filial_id,
       empresa_id: data.empresa_id,
-      gerente_id: data.gerente_id,
+      empresa_nome: empresa.nome,
     });
 
-    router.push("/entregador");
+    router.push("/admin");
   }
 
   return (
     <main className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
       <div className="bg-white p-6 rounded-2xl shadow w-full max-w-md">
-        <h1 className="text-2xl font-bold mb-2">Login do Entregador</h1>
+        <h1 className="text-2xl font-bold mb-2">Login Gerencial</h1>
         <p className="text-gray-600 mb-6">
-          Acesse para lançar suas entregas.
+          Acesse o painel da sua empresa.
         </p>
 
         <form onSubmit={entrar} className="space-y-4">
@@ -115,9 +99,8 @@ export default function LoginEntregadorPage() {
           </div>
 
           <button
-            type="submit"
             disabled={carregando}
-            className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 disabled:opacity-60"
+            className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold disabled:opacity-60"
           >
             {carregando ? "Entrando..." : "Entrar"}
           </button>

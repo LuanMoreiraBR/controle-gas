@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { GerenteLogado, pegarGerente, sairGerente } from "@/lib/auth";
 
 type Filial = {
   id: string;
@@ -20,25 +22,47 @@ type Entrega = {
   entregue_em: string;
   entregador_nome: string | null;
   filial_id: string | null;
+  empresa_id: string | null;
 };
 
 export default function AdminPage() {
+  const router = useRouter();
+
+  const [gerente, setGerente] = useState<GerenteLogado | null>(null);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [entregas, setEntregas] = useState<Entrega[]>([]);
   const [filialSelecionada, setFilialSelecionada] = useState("todas");
   const [carregando, setCarregando] = useState(true);
 
-  async function carregarDados() {
+  useEffect(() => {
+    const gerenteLogado = pegarGerente();
+
+    if (!gerenteLogado) {
+      router.push("/login-gerente");
+      return;
+    }
+
+    setGerente(gerenteLogado);
+    carregarDados(gerenteLogado);
+  }, [router]);
+
+  async function carregarDados(gerenteLogado?: GerenteLogado) {
+    const gerenteAtual = gerenteLogado || gerente;
+
+    if (!gerenteAtual) return;
+
     setCarregando(true);
 
     const { data: filiaisData } = await supabase
       .from("filiais")
       .select("id, nome")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .order("nome", { ascending: true });
 
     const { data: entregasData, error } = await supabase
       .from("entregas")
       .select("*")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .order("entregue_em", { ascending: false });
 
     if (error) {
@@ -52,12 +76,13 @@ export default function AdminPage() {
     setCarregando(false);
   }
 
-  useEffect(() => {
-    carregarDados();
-  }, []);
-
   function nomeFilial(id: string | null) {
     return filiais.find((filial) => filial.id === id)?.nome || "-";
+  }
+
+  function sair() {
+    sairGerente();
+    router.push("/login-gerente");
   }
 
   const entregasFiltradas =
@@ -82,6 +107,14 @@ export default function AdminPage() {
     .filter((entrega) => entrega.forma_pagamento === "cartao")
     .reduce((total, entrega) => total + Number(entrega.valor || 0), 0);
 
+  if (!gerente) {
+    return (
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p>Carregando...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -89,7 +122,8 @@ export default function AdminPage() {
           <div>
             <h1 className="text-3xl font-bold">Painel Gerencial</h1>
             <p className="text-gray-600">
-              Acompanhamento geral das entregas lançadas pelos entregadores.
+              Empresa: <strong>{gerente.empresa_nome}</strong> | Gerente:{" "}
+              <strong>{gerente.nome}</strong>
             </p>
           </div>
 
@@ -115,12 +149,12 @@ export default function AdminPage() {
               Clientes
             </Link>
 
-            <Link
-              href="/"
+            <button
+              onClick={sair}
               className="bg-red-600 text-white px-4 py-2 rounded-xl font-semibold hover:bg-red-700"
             >
               Sair
-            </Link>
+            </button>
           </div>
         </div>
 
@@ -165,7 +199,7 @@ export default function AdminPage() {
             </div>
 
             <button
-              onClick={carregarDados}
+              onClick={() => carregarDados()}
               className="bg-blue-600 text-white px-4 py-3 rounded-xl font-semibold hover:bg-blue-700"
             >
               Atualizar tabela
@@ -190,21 +224,15 @@ export default function AdminPage() {
                   <tr className="bg-gray-100 text-left">
                     <th className="p-3 border whitespace-nowrap">Hora/Data</th>
                     <th className="p-3 border whitespace-nowrap">Filial</th>
-                    <th className="p-3 border whitespace-nowrap">
-                      Entregador
-                    </th>
+                    <th className="p-3 border whitespace-nowrap">Entregador</th>
                     <th className="p-3 border whitespace-nowrap">Cliente</th>
                     <th className="p-3 border whitespace-nowrap">Endereço</th>
                     <th className="p-3 border whitespace-nowrap">
                       Modelo do botijão
                     </th>
-                    <th className="p-3 border whitespace-nowrap">
-                      Pagamento
-                    </th>
+                    <th className="p-3 border whitespace-nowrap">Pagamento</th>
                     <th className="p-3 border whitespace-nowrap">Valor</th>
-                    <th className="p-3 border whitespace-nowrap">
-                      Observação
-                    </th>
+                    <th className="p-3 border whitespace-nowrap">Observação</th>
                   </tr>
                 </thead>
 

@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { GerenteLogado, pegarGerente } from "@/lib/auth";
 
 type Filial = {
   id: string;
@@ -11,6 +13,8 @@ type Filial = {
 
 type Cliente = {
   id: string;
+  empresa_id: string | null;
+  gerente_id: string | null;
   filial_id: string | null;
   nome: string;
   telefone: string | null;
@@ -23,6 +27,9 @@ type Cliente = {
 };
 
 export default function ClientesPage() {
+  const router = useRouter();
+
+  const [gerente, setGerente] = useState<GerenteLogado | null>(null);
   const [filiais, setFiliais] = useState<Filial[]>([]);
   const [clientes, setClientes] = useState<Cliente[]>([]);
 
@@ -41,10 +48,27 @@ export default function ClientesPage() {
   const [referencia, setReferencia] = useState("");
   const [salvando, setSalvando] = useState(false);
 
-  async function buscarDados() {
+  useEffect(() => {
+    const gerenteLogado = pegarGerente();
+
+    if (!gerenteLogado) {
+      router.push("/login-gerente");
+      return;
+    }
+
+    setGerente(gerenteLogado);
+    buscarDados(gerenteLogado);
+  }, [router]);
+
+  async function buscarDados(gerenteLogado?: GerenteLogado) {
+    const gerenteAtual = gerenteLogado || gerente;
+
+    if (!gerenteAtual) return;
+
     const { data: filiaisData, error: filiaisError } = await supabase
       .from("filiais")
       .select("id, nome")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .eq("ativo", true)
       .order("nome", { ascending: true });
 
@@ -62,6 +86,7 @@ export default function ClientesPage() {
     const { data: clientesData, error: clientesError } = await supabase
       .from("clientes")
       .select("*")
+      .eq("empresa_id", gerenteAtual.empresa_id)
       .order("nome", { ascending: true });
 
     if (clientesError) {
@@ -71,10 +96,6 @@ export default function ClientesPage() {
 
     setClientes(clientesData || []);
   }
-
-  useEffect(() => {
-    buscarDados();
-  }, []);
 
   function limparFormulario() {
     setEditandoId(null);
@@ -106,59 +127,90 @@ export default function ClientesPage() {
   }
 
   async function salvarCliente(e: React.FormEvent) {
-    e.preventDefault();
+  e.preventDefault();
 
-    if (!filialId) {
-      alert("Selecione uma filial.");
+  if (!gerente) {
+    alert("Faça login novamente.");
+    router.push("/login-gerente");
+    return;
+  }
+
+  if (!filialId) {
+    alert("Selecione uma filial.");
+    return;
+  }
+
+  setSalvando(true);
+
+  const payload = {
+    empresa_id: gerente.empresa_id,
+    gerente_id: gerente.id,
+    filial_id: filialId,
+    nome,
+    telefone,
+    endereco,
+    numero,
+    complemento,
+    bairro,
+    cidade,
+    referencia,
+  };
+
+  if (editandoId) {
+    const { data, error } = await supabase
+      .from("clientes")
+      .update(payload)
+      .eq("id", editandoId)
+      .select("*")
+      .single();
+
+    setSalvando(false);
+
+    if (error) {
+      alert("Erro ao atualizar cliente: " + error.message);
       return;
     }
 
-    setSalvando(true);
-
-    const payload = {
-      filial_id: filialId,
-      nome,
-      telefone,
-      endereco,
-      numero,
-      complemento,
-      bairro,
-      cidade,
-      referencia,
-    };
-
-    if (editandoId) {
-      const { error } = await supabase
-        .from("clientes")
-        .update(payload)
-        .eq("id", editandoId);
-
-      setSalvando(false);
-
-      if (error) {
-        alert("Erro ao atualizar cliente: " + error.message);
-        return;
-      }
-
-      alert("Cliente atualizado com sucesso!");
-    } else {
-      const { error } = await supabase.from("clientes").insert(payload);
-
-      setSalvando(false);
-
-      if (error) {
-        alert("Erro ao cadastrar cliente: " + error.message);
-        return;
-      }
-
-      alert("Cliente cadastrado com sucesso!");
+    if (!data) {
+      alert("Cliente não encontrado para atualização.");
+      return;
     }
 
-    limparFormulario();
-    buscarDados();
+    setClientes((clientesAtuais) =>
+      clientesAtuais.map((cliente) =>
+        cliente.id === editandoId ? (data as Cliente) : cliente
+      )
+    );
+
+    alert("Cliente atualizado com sucesso!");
+  } else {
+    const { data, error } = await supabase
+      .from("clientes")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    setSalvando(false);
+
+    if (error) {
+      alert("Erro ao cadastrar cliente: " + error.message);
+      return;
+    }
+
+    if (data) {
+      setClientes((clientesAtuais) => [data as Cliente, ...clientesAtuais]);
+    }
+
+    alert("Cliente cadastrado com sucesso!");
   }
 
+  limparFormulario();
+  await buscarDados(gerente);
+}
+
   async function excluirCliente(cliente: Cliente) {
+    if (!gerente) return;
+
     const confirmar = confirm(`Deseja excluir o cliente ${cliente.nome}?`);
 
     if (!confirmar) return;
@@ -166,7 +218,8 @@ export default function ClientesPage() {
     const { error } = await supabase
       .from("clientes")
       .delete()
-      .eq("id", cliente.id);
+      .eq("id", cliente.id)
+      .eq("empresa_id", gerente.empresa_id);
 
     if (error) {
       alert("Erro ao excluir cliente: " + error.message);
@@ -203,6 +256,14 @@ export default function ClientesPage() {
     });
   }, [clientes, busca, filtroFilial, filiais]);
 
+  if (!gerente) {
+    return (
+      <main className="min-h-screen bg-gray-100 flex items-center justify-center">
+        <p>Carregando...</p>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -210,7 +271,7 @@ export default function ClientesPage() {
           <div>
             <h1 className="text-2xl font-bold">Clientes</h1>
             <p className="text-gray-600">
-              Cadastre clientes, endereços, referências e filial.
+              Empresa: <strong>{gerente.empresa_nome}</strong>
             </p>
           </div>
 
@@ -440,7 +501,7 @@ export default function ClientesPage() {
                   {clientesFiltrados.length === 0 && (
                     <tr>
                       <td className="p-3 border text-gray-500" colSpan={6}>
-                        Nenhum cliente encontrado.
+                        Nenhum cliente encontrado para esta empresa.
                       </td>
                     </tr>
                   )}
@@ -449,7 +510,7 @@ export default function ClientesPage() {
             </div>
 
             <p className="text-xs text-gray-500 mt-4">
-              Esses dados serão usados na busca rápida da tela do entregador.
+              Somente clientes da empresa logada aparecem nesta tela.
             </p>
           </div>
         </div>
