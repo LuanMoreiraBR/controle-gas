@@ -18,10 +18,10 @@ export default function Home() {
           </Link>
 
           <Link
-            href="/entregador"
+            href="/login-entregador"
             className="bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700"
           >
-            Área do Entregador
+            Login do Entregador
           </Link>
         </div>
       </div>

@@ -4,6 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
+type Filial = {
+  id: string;
+  nome: string;
+};
+
 type Entrega = {
   id: string;
   cliente_nome: string;
@@ -13,16 +18,25 @@ type Entrega = {
   valor: number;
   observacao: string | null;
   entregue_em: string;
+  entregador_nome: string | null;
+  filial_id: string | null;
 };
 
 export default function EntregasPage() {
+  const [filiais, setFiliais] = useState<Filial[]>([]);
   const [entregas, setEntregas] = useState<Entrega[]>([]);
   const [carregando, setCarregando] = useState(true);
+  const [filialSelecionada, setFilialSelecionada] = useState("todas");
 
-  async function buscarEntregas() {
+  async function buscarDados() {
     setCarregando(true);
 
-    const { data, error } = await supabase
+    const { data: filiaisData } = await supabase
+      .from("filiais")
+      .select("id, nome")
+      .order("nome");
+
+    const { data: entregasData, error } = await supabase
       .from("entregas")
       .select("*")
       .order("entregue_em", { ascending: false });
@@ -33,15 +47,25 @@ export default function EntregasPage() {
       return;
     }
 
-    setEntregas(data || []);
+    setFiliais(filiaisData || []);
+    setEntregas(entregasData || []);
     setCarregando(false);
   }
 
   useEffect(() => {
-    buscarEntregas();
+    buscarDados();
   }, []);
 
-  const totalVendido = entregas.reduce(
+  function nomeFilial(id: string | null) {
+    return filiais.find((filial) => filial.id === id)?.nome || "-";
+  }
+
+  const entregasFiltradas =
+    filialSelecionada === "todas"
+      ? entregas
+      : entregas.filter((entrega) => entrega.filial_id === filialSelecionada);
+
+  const totalVendido = entregasFiltradas.reduce(
     (total, entrega) => total + Number(entrega.valor || 0),
     0
   );
@@ -62,17 +86,31 @@ export default function EntregasPage() {
           </Link>
         </div>
 
+        <div className="bg-white p-4 rounded-2xl shadow mb-6">
+          <label className="block font-semibold mb-1">Filtro de filial</label>
+          <select
+            value={filialSelecionada}
+            onChange={(e) => setFilialSelecionada(e.target.value)}
+            className="w-full md:w-80 border rounded-xl p-3"
+          >
+            <option value="todas">Todas as filiais</option>
+            {filiais.map((filial) => (
+              <option key={filial.id} value={filial.id}>
+                {filial.nome}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <div className="bg-white p-5 rounded-2xl shadow">
             <p className="text-gray-600">Total de entregas</p>
-            <strong className="text-2xl">{entregas.length}</strong>
+            <strong className="text-2xl">{entregasFiltradas.length}</strong>
           </div>
 
           <div className="bg-white p-5 rounded-2xl shadow">
             <p className="text-gray-600">Total vendido</p>
-            <strong className="text-2xl">
-              R$ {totalVendido.toFixed(2)}
-            </strong>
+            <strong className="text-2xl">R$ {totalVendido.toFixed(2)}</strong>
           </div>
 
           <div className="bg-white p-5 rounded-2xl shadow">
@@ -88,7 +126,7 @@ export default function EntregasPage() {
             <h2 className="text-xl font-bold">Tabela de entregas</h2>
 
             <button
-              onClick={buscarEntregas}
+              onClick={buscarDados}
               className="bg-blue-600 text-white px-4 py-2 rounded-xl font-semibold"
             >
               Atualizar
@@ -102,9 +140,11 @@ export default function EntregasPage() {
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="bg-gray-100 text-left">
+                    <th className="p-3 border">Filial</th>
+                    <th className="p-3 border">Entregador</th>
                     <th className="p-3 border">Cliente</th>
                     <th className="p-3 border">Endereço</th>
-                    <th className="p-3 border">Gás</th>
+                    <th className="p-3 border">Botijão</th>
                     <th className="p-3 border">Pagamento</th>
                     <th className="p-3 border">Valor</th>
                     <th className="p-3 border">Data/Hora</th>
@@ -113,8 +153,10 @@ export default function EntregasPage() {
                 </thead>
 
                 <tbody>
-                  {entregas.map((entrega) => (
+                  {entregasFiltradas.map((entrega) => (
                     <tr key={entrega.id}>
+                      <td className="p-3 border">{nomeFilial(entrega.filial_id)}</td>
+                      <td className="p-3 border">{entrega.entregador_nome}</td>
                       <td className="p-3 border">{entrega.cliente_nome}</td>
                       <td className="p-3 border">{entrega.cliente_endereco}</td>
                       <td className="p-3 border">{entrega.produto_modelo}</td>
@@ -131,9 +173,9 @@ export default function EntregasPage() {
                     </tr>
                   ))}
 
-                  {entregas.length === 0 && (
+                  {entregasFiltradas.length === 0 && (
                     <tr>
-                      <td className="p-3 border text-gray-500" colSpan={7}>
+                      <td className="p-3 border text-gray-500" colSpan={9}>
                         Nenhuma entrega registrada.
                       </td>
                     </tr>
