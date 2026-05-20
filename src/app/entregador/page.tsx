@@ -23,6 +23,8 @@ type Cliente = {
   nome: string;
   telefone: string | null;
   endereco: string;
+  numero: string | null;
+  complemento: string | null;
   bairro: string | null;
   cidade: string | null;
   referencia: string | null;
@@ -36,11 +38,15 @@ export default function EntregadorPage() {
   const [entregador, setEntregador] = useState<EntregadorLogado | null>(null);
 
   const [clientes, setClientes] = useState<Cliente[]>([]);
-  const [clienteSelecionado, setClienteSelecionado] = useState<Cliente | null>(null);
+  const [clienteSelecionado, setClienteSelecionado] =
+    useState<Cliente | null>(null);
   const [buscaCliente, setBuscaCliente] = useState("");
 
   const [clienteNome, setClienteNome] = useState("");
   const [clienteEndereco, setClienteEndereco] = useState("");
+  const [clienteNumero, setClienteNumero] = useState("");
+  const [clienteBairro, setClienteBairro] = useState("");
+  const [clienteReferencia, setClienteReferencia] = useState("");
 
   const [precos, setPrecos] = useState<PrecoBotijao[]>([]);
   const [produtoModelo, setProdutoModelo] = useState("P13");
@@ -120,6 +126,8 @@ export default function EntregadorPage() {
           cliente.nome,
           cliente.telefone,
           cliente.endereco,
+          cliente.numero,
+          cliente.complemento,
           cliente.bairro,
           cliente.cidade,
           cliente.referencia,
@@ -153,6 +161,8 @@ export default function EntregadorPage() {
 
     const enderecoCompleto = [
       cliente.endereco,
+      cliente.numero,
+      cliente.complemento,
       cliente.bairro,
       cliente.cidade,
       cliente.referencia ? `Ref: ${cliente.referencia}` : "",
@@ -168,11 +178,14 @@ export default function EntregadorPage() {
     setClienteSelecionado(null);
     setClienteNome("");
     setClienteEndereco("");
+    setClienteNumero("");
+    setClienteBairro("");
+    setClienteReferencia("");
     setBuscaCliente("");
   }
 
   async function salvarClienteNovo() {
-    if (!entregador) return;
+    if (!entregador) return null;
 
     const { data, error } = await supabase
       .from("clientes")
@@ -180,6 +193,9 @@ export default function EntregadorPage() {
         filial_id: entregador.filial_id,
         nome: clienteNome,
         endereco: clienteEndereco,
+        numero: clienteNumero,
+        bairro: clienteBairro,
+        referencia: clienteReferencia,
       })
       .select("*")
       .single();
@@ -207,6 +223,11 @@ export default function EntregadorPage() {
       return;
     }
 
+    if (!clienteSelecionado && !clienteNumero) {
+      alert("Informe o número do endereço.");
+      return;
+    }
+
     if (!valor || Number(valor) <= 0) {
       alert("Informe um valor válido.");
       return;
@@ -220,9 +241,20 @@ export default function EntregadorPage() {
       clienteAtual = await salvarClienteNovo();
     }
 
+    const enderecoEntrega = clienteSelecionado
+      ? clienteEndereco
+      : [
+          clienteEndereco,
+          clienteNumero,
+          clienteBairro,
+          clienteReferencia ? `Ref: ${clienteReferencia}` : "",
+        ]
+          .filter(Boolean)
+          .join(" - ");
+
     const { error } = await supabase.from("entregas").insert({
       cliente_nome: clienteNome,
-      cliente_endereco: clienteEndereco,
+      cliente_endereco: enderecoEntrega,
       produto_modelo: produtoModelo,
       forma_pagamento: formaPagamento,
       valor: Number(valor),
@@ -246,6 +278,9 @@ export default function EntregadorPage() {
     setBuscaCliente("");
     setClienteNome("");
     setClienteEndereco("");
+    setClienteNumero("");
+    setClienteBairro("");
+    setClienteReferencia("");
     setProdutoModelo("P13");
     setFormaPagamento("dinheiro");
     setValor(String(precoDoModelo("P13") || ""));
@@ -311,8 +346,14 @@ export default function EntregadorPage() {
                     <strong>{cliente.nome}</strong>
                     <br />
                     <span className="text-sm text-gray-600">
-                      {cliente.endereco}
-                      {cliente.bairro ? ` - ${cliente.bairro}` : ""}
+                      {[
+                        cliente.endereco,
+                        cliente.numero,
+                        cliente.bairro,
+                        cliente.referencia,
+                      ]
+                        .filter(Boolean)
+                        .join(" - ")}
                     </span>
                   </button>
                 ))}
@@ -355,12 +396,45 @@ export default function EntregadorPage() {
                 </div>
 
                 <div>
-                  <label className="block font-semibold mb-1">Endereço</label>
+                  <label className="block font-semibold mb-1">
+                    Rua/Endereço
+                  </label>
                   <input
                     value={clienteEndereco}
                     onChange={(e) => setClienteEndereco(e.target.value)}
                     className="w-full border rounded-xl p-3"
                     required
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-semibold mb-1">Número</label>
+                    <input
+                      value={clienteNumero}
+                      onChange={(e) => setClienteNumero(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold mb-1">Bairro</label>
+                    <input
+                      value={clienteBairro}
+                      onChange={(e) => setClienteBairro(e.target.value)}
+                      className="w-full border rounded-xl p-3"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">Referência</label>
+                  <input
+                    value={clienteReferencia}
+                    onChange={(e) => setClienteReferencia(e.target.value)}
+                    className="w-full border rounded-xl p-3"
+                    placeholder="Ex: casa azul, perto do mercado..."
                   />
                 </div>
               </div>
@@ -432,7 +506,8 @@ export default function EntregadorPage() {
                 required
               />
               <p className="text-xs text-gray-500 mt-1">
-                O valor vem automático pelo preço da filial, mas pode ser editado.
+                O valor vem automático pelo preço da filial, mas pode ser
+                editado.
               </p>
             </div>
 
